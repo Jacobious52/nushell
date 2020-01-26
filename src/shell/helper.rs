@@ -204,3 +204,5 @@ impl Painter {
 }
 
 impl rustyline::Helper for Helper {}
+
+impl rustyline::validate::Validator for Helper {}
