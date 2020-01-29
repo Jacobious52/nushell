@@ -7,9 +7,26 @@ pub(crate) fn dir_entry_dict(
     metadata: &std::fs::Metadata,
     tag: impl Into<Tag>,
     full: bool,
+    name_only: bool,
+    with_symlink_targets: bool,
 ) -> Result<Value, ShellError> {
-    let mut dict = TaggedDictBuilder::new(tag);
-    dict.insert_untagged("name", UntaggedValue::string(filename.to_string_lossy()));
+    let tag = tag.into();
+    let mut dict = TaggedDictBuilder::new(&tag);
+
+    let name = if name_only {
+        filename.file_name().and_then(|s| s.to_str())
+    } else {
+        filename.to_str()
+    }
+    .ok_or_else(|| {
+        ShellError::labeled_error(
+            format!("Invalid file name: {:}", filename.to_string_lossy()),
+            "invalid file name",
+            tag,
+        )
+    })?;
+
+    dict.insert_untagged("name", UntaggedValue::string(name));
 
     if metadata.is_dir() {
         dict.insert_untagged("type", UntaggedValue::string("Dir"));
@@ -18,6 +35,22 @@ pub(crate) fn dir_entry_dict(
     } else {
         dict.insert_untagged("type", UntaggedValue::string("Symlink"));
     };
+
+    if full || with_symlink_targets {
+        if metadata.is_dir() || metadata.is_file() {
+            dict.insert_untagged("target", UntaggedValue::bytes(0u64));
+        } else if let Ok(path_to_link) = filename.read_link() {
+            dict.insert_untagged(
+                "target",
+                UntaggedValue::string(path_to_link.to_string_lossy()),
+            );
+        } else {
+            dict.insert_untagged(
+                "target",
+                UntaggedValue::string("Could not obtain target file's path"),
+            );
+        }
+    }
 
     if full {
         dict.insert_untagged(
